@@ -20,71 +20,6 @@ interface GibWorkResponse {
 const apiKeyCache: Record<string, string> = {};
 
 export default (app: Probot) => {
-  // Listen for app installations
-  app.on("installation.created", async (context) => {
-    try {
-      app.log.info("New installation created");
-      const orgName = context.payload.installation.account.login;
-      const isOrg = context.payload.installation.account.type === "Organization";
-      
-      // Create a setup issue in the first repository with instructions
-      if (context.payload.repositories && context.payload.repositories.length > 0) {
-        const repo = context.payload.repositories[0];
-        
-        // Different instructions depending on whether it's an org or user
-        const setupInstructions = isOrg 
-          ? `Thanks for installing the GibWork integration bot!
-
-To set your organization-wide GibWork API key, any organization member can post a comment with:
-
-\`/setApiKey YOUR_API_KEY\`
-
-The comment will be automatically deleted for security.
-
-**Note**: This API key will be shared across all repositories in your organization.
-
-Once set up, you can create bounties by commenting \`/bounty\` on any issue.
-
-**Note**: Only repository collaborators with write access or organization members can create bounties.`
-          : `Thanks for installing the GibWork integration bot!
-
-To set your GibWork API key, a repository owner can post a comment with:
-
-\`/setApiKey YOUR_API_KEY\`
-
-The comment will be automatically deleted for security.
-
-Once set up, you can create bounties by commenting \`/bounty\` on any issue.
-
-**Note**: Only repository collaborators with write access can create bounties.`;
-        
-        await context.octokit.issues.create({
-          owner: orgName,
-          repo: repo.name,
-          title: "GibWork Integration Setup",
-          body: setupInstructions,
-        });
-      } else {
-        app.log.warn(`Installation for org ${orgName} has no repositories.`);
-      }
-    } catch (error: any) {
-      app.log.error(`Error during installation: ${error.message}`);
-    }
-  });
-
-  // Optionally: Comment on new issues
-  app.on("issues.opened", async (context) => {
-    try {
-      // Only comment if the issue body does NOT include a bounty command
-      if (!context.payload.issue.body?.includes('/bounty')) {
-        await context.octokit.issues.createComment(context.issue({
-          body: "Thanks for opening this issue!",
-        }));
-      }
-    } catch (error: any) {
-      app.log.error(`Error commenting on new issue: ${error.message}`);
-    }
-  });
 
   // Listen for issue comments to handle commands
   app.on("issue_comment.created", async (context) => {
@@ -125,7 +60,7 @@ Once set up, you can create bounties by commenting \`/bounty\` on any issue.
       app.log.error(`Stack trace: ${error.stack}`);
       try {
         await context.octokit.issues.createComment(context.issue({
-          body: `❌ Error: ${error.message}`,
+          body: `Error: ${error.message}`,
         }));
       } catch (commentError: any) {
         app.log.error(`Could not post error comment: ${commentError.message}`);
@@ -199,8 +134,8 @@ Once set up, you can create bounties by commenting \`/bounty\` on any issue.
       app.log.info(`User ${username} doesn't have permission to set API key`);
       
       const errorMessage = isOrg
-        ? `❌ Permission denied: Only organization members can set the organization-wide API key.`
-        : `❌ Permission denied: Only repository owners can set the API key.`;
+        ? `Permission denied: Only organization members can set the organization-wide API key.`
+        : `Permission denied: Only repository owners can set the API key.`;
       
       await context.octokit.issues.createComment(context.issue({
         body: errorMessage
@@ -210,8 +145,6 @@ Once set up, you can create bounties by commenting \`/bounty\` on any issue.
 
     try {
       // Store the API key
-      // For organizations, store it with just the org name as the key to make it org-wide
-      // For personal repos, store it with the full repo path
       const cacheKey = isOrg ? repoOwner : `${repoOwner}/${repoName}`;
       apiKeyCache[cacheKey] = apiKey;
       
@@ -234,8 +167,8 @@ Once set up, you can create bounties by commenting \`/bounty\` on any issue.
       
       // Notify that the key was set successfully
       const successMessage = isOrg
-        ? `✅ Organization-wide API key set successfully. This key will be used for all repositories in the ${repoOwner} organization. The comment with your API key has been deleted for security.`
-        : `✅ Repository API key set successfully. The comment with your API key has been deleted for security.`;
+        ? `Organization-wide API key set successfully. This key will be used for all repositories in the ${repoOwner} organization. The comment with your API key has been deleted for security.`
+        : `Repository API key set successfully. The comment with your API key has been deleted for security.`;
       
       await context.octokit.issues.createComment(context.issue({
         body: successMessage
@@ -243,7 +176,7 @@ Once set up, you can create bounties by commenting \`/bounty\` on any issue.
     } catch (error: any) {
       app.log.error(`Error setting API key: ${error.message}`);
       await context.octokit.issues.createComment(context.issue({
-        body: `❌ Error setting API key: ${error.message}`
+        body: `Error setting API key: ${error.message}`
       }));
       
       // Still try to delete the comment with the API key
@@ -322,16 +255,10 @@ Once set up, you can create bounties by commenting \`/bounty\` on any issue.
     if (!hasPermission) {
       app.log.info(`User ${username} doesn't have permission to create bounties`);
       await context.octokit.issues.createComment(context.issue({
-        body: `❌ Permission denied: Only repository collaborators with write access or organization members can create bounties.`
+        body: `Permission denied: Only repository collaborators with write access or organization members can create bounties.`
       }));
       return;
     }
-
-    // Notify the user that the bounty request is being processed
-    await context.octokit.issues.createComment(context.issue({
-      body: "⏳ Processing bounty request...",
-    }));
-
     // Get the API key - check for organization-wide key first, then repository specific key
     let apiKey = null;
     
@@ -350,8 +277,8 @@ Once set up, you can create bounties by commenting \`/bounty\` on any issue.
     
     if (!apiKey) {
       const errorMessage = isOrg
-        ? `❌ API key not set. Please ask an organization member to set the organization-wide API key using \`/setApiKey YOUR_API_KEY\``
-        : `❌ API key not set. Please set the API key using \`/setApiKey YOUR_API_KEY\``;
+        ? `API key not set. Please ask an organization member to set the organization-wide API key using \`/setApiKey YOUR_API_KEY\``
+        : `API key not set. Please set the API key using \`/setApiKey YOUR_API_KEY\``;
       
       await context.octokit.issues.createComment(context.issue({
         body: errorMessage
@@ -428,7 +355,7 @@ You can view and manage this bounty at ${responseData.link}`,
     } catch (apiError: any) {
       app.log.error(`Error making GibWork API call: ${apiError.message}`);
       await context.octokit.issues.createComment(context.issue({
-        body: `❌ Error creating bounty: ${apiError.message}`,
+        body: `Error creating bounty: ${apiError.message}`,
       }));
     }
   }
