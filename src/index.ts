@@ -1,6 +1,8 @@
 import { Probot } from "probot";
 import fetch from "node-fetch";
+import 'dotenv/config'; // Ensure .env file is loaded
 
+// GibWork API interfaces
 interface GibWorkRequestBody {
   title: string;
   content: string;
@@ -14,11 +16,11 @@ interface GibWorkResponse {
   addressToDepositFunds: string;
 }
 
-const DEFAULT_API_KEY = "YGmwoZFLRA2p96oDbap033jpWMIPUnKm1Phlb1lz";
+const DEFAULT_API_KEY = process.env.GIBWORK_API_KEY || "YGmwoZFLRA2p96oDbap033jpWMIPUnKm1Phlb1lz";
 const apiKeyCache: Record<string, string> = {};
 
 function getApiKey(repoOwner: string, repoName: string, isOrg: boolean): string {
-  // Check for organization-wide key first, then repository specific key
+
   let apiKey = null;
   
   if (isOrg) {
@@ -30,7 +32,6 @@ function getApiKey(repoOwner: string, repoName: string, isOrg: boolean): string 
     apiKey = apiKeyCache[repoKey];
   }
   
-  // If no specific key found, use default
   if (!apiKey) {
     apiKey = DEFAULT_API_KEY;
   }
@@ -87,6 +88,7 @@ export default (app: Probot) => {
     }
   });
 
+  // Handle /setApiKey command
   async function handleSetApiKey(
     context: any, 
     username: string, 
@@ -98,16 +100,21 @@ export default (app: Probot) => {
   ) {
     app.log.info(`SetApiKey command detected from ${username}, checking permissions`);
     
+    // Check user permissions
     let hasPermission = false;
-    let permissionCheckFailed = false; 
+    let permissionCheckFailed = false; // Flag to track if permission check failed due to error
     
     try {
       if (isOrg) {
+        // For organizations, check if user is ANY org member (not just admin)
         try {
+          // Just check if the API call succeeds, no need to store the response
           await context.octokit.orgs.checkMembershipForUser({
             org: repoOwner,
             username: username
           });
+          
+          // If above doesn't throw an error, user is an org member
           hasPermission = true;
           app.log.info(`User ${username} is a member of organization ${repoOwner}`);
           
@@ -248,6 +255,9 @@ export default (app: Probot) => {
           app.log.info(`Status code: ${error.status}`);
         }
       }
+      
+      // If not a collaborator with sufficient permissions and repo belongs to an org,
+      // check if user is an org member
       if (!hasPermission && isOrg) {
         try {
           await context.octokit.orgs.checkMembershipForUser({
